@@ -1,18 +1,18 @@
 import copy
 import matplotlib.pyplot as plt
-import math
-import numpy as np
-import pandas as pd
-import scipy.optimize as opt
 
 
 class Lab:
-    def __init__(self, filename, start_light_time, time_light_on, whole_time):
+    def __init__(self, filename, plot_title, start_light_time, time_light_on, whole_time, start_num=1):
         self.start = start_light_time
         self.time_light_on = time_light_on
         self.whole_time = whole_time
-        self.x_data, self.y_data = self.extract_data_from_txt()\
         self.filename = filename
+        self.start_num = start_num
+        if start_num % 2 == 0:
+            self.start_num += 1
+        self.x_data, self.y_data = self.extract_data_from_txt()
+        self.plot_title = plot_title
 
     def extract_data_from_txt(self):
         time_array = []
@@ -21,18 +21,18 @@ class Lab:
             lines = f.readlines()
             for line in lines:
                 curr_line = line.split()
-                if int(lines[0]) > self.start and int(lines[0]) % 2 != 0:
-                    time_array.append(int(lines[0]) - 50)
-                    pH_array.append(int((lines[19])[:-2]))
+                if int(curr_line[0]) > self.start * 2 and (int(curr_line[0]) + self.start_num) % 2 != 0 and \
+                        int(curr_line[0]) < (self.start + self.whole_time) * 2:
+                    time_array.append(int(curr_line[0]) - 50)
+                    pH_array.append(float((curr_line[18])[:-2]))
 
         return time_array, pH_array
 
     def make_plot(self):
         fig, ax = plt.subplots()
         ax.plot(self.x_data, self.y_data)
-        plt.xlabel("Time")
+        plt.xlabel("Time, s")
         plt.ylabel("pH")
-        plt.title("pH test")
+        plt.title(self.plot_title)
         plt.show()
-
 
