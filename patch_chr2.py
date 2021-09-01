@@ -4,15 +4,21 @@ from scipy import signal
 import numpy as np
 from scipy.optimize import curve_fit
 
-FIT_F_START = 0
-FIT_F_FINISH = 1000
+FIT_F_START = 2.5
+FIT_F_FINISH = 500
 TAU_OFF = 2 * 10 ** (-4)  # seconds
-START_TIME_AVG = 0.75
+START_TIME_AVG = 1.25
 FINISH_TIME_AVG = 1.5
+FIT_V_START = -80
+FIT_V_FINISH = -20
 
 
-def lorentzian(x, f_c, x_0):
-    return S_0 / (1 + (x - x_0 / f_c) ** 2)
+def linear(x, a):
+    return a * (x - V_rev)
+
+
+def lorentzian(x, f_c):
+    return S_0 / (1 + (x / f_c) ** 2)
 
 
 # Data extraction
@@ -60,10 +66,9 @@ ax_psd.set_ylabel('PSD')
 
 f = np.linspace(FIT_F_START, FIT_F_FINISH, 1000)
 f_c_fit = params[0]
-f_0_fit = params[1]
 
 ax_delta.plot(f_d, psd_d)
-ax_delta.plot(f, lorentzian(f, f_c_fit, f_0_fit))
+ax_delta.plot(f, lorentzian(f, f_c_fit))
 ax_delta.set_title('PSD (on - off)')
 ax_delta.set_yscale('log')
 ax_delta.set_xscale('log')
@@ -77,34 +82,51 @@ p_c = 1 / (2 * np.pi * f_c_fit * TAU_OFF)  # probability of closed state (p_c = 
 # Plotting sweeps, extracting currents from sweeps, plotting VAC
 # and calculating single channel currents
 fig_s, ax_s = plt.subplots()
-fig_vac, ax_vac = plt.subplots(1, 2)
+fig_vac, ax_vac = plt.subplots()
 
 ax_s.set_title('Sweeps')
 ax_s.set_xlabel('Time, s')
 ax_s.set_ylabel('Current, pA')
+ax_s.set_xlim(0, 2)
+ax_s.set_ylim(-4000, 2000)
 
-ax_vac[0].set_title('VAC for whole cell')
-ax_vac[0].set_xlabel('Voltage, mV')
-ax_vac[0].set_ylabel('Current, pA')
-
-ax_vac[1].set_title('VAC for single channel')
-ax_vac[1].set_xlabel('Voltage, mV')
-ax_vac[1].set_ylabel('Current, pA')
+ax_vac.set_title('VAC for whole cell')
+ax_vac.set_xlabel('Voltage, mV')
+ax_vac.set_ylabel('Current, pA')
 
 i_cell = []  # whole cell currents
+i_cell_for_fit = []  # currents for further fitting
 i_single = []  # single channel currents
 u_raw = []  # voltages
-start_index_avg = int(START_TIME_AVG * abf_sweeps.dataPointsPerMs)
-finish_index_avg = int(FINISH_TIME_AVG * abf_sweeps.dataPointsPerMs)
+u_for_fit = []  # voltages for further fitting
+start_index_avg = int(START_TIME_AVG * abf_sweeps.dataPointsPerMs * 1000)
+finish_index_avg = int(FINISH_TIME_AVG * abf_sweeps.dataPointsPerMs * 1000)
 
 for sweep in abf_sweeps.sweepList:
     abf_sweeps.setSweep(sweep)
     ax_s.plot(abf_sweeps.sweepX, abf_sweeps.sweepY)
     i_cell.append(np.average(abf_sweeps.sweepY[start_index_avg:finish_index_avg]))
     i_single.append(sigma_2 / i_cell[len(i_cell)-1] / p_c)
+    if FIT_V_START <= abf_sweeps.sweepEpochs.levels[2] <= FIT_V_FINISH:
+        u_for_fit.append(abf_sweeps.sweepEpochs.levels[2])
+        i_cell_for_fit.append(np.average(abf_sweeps.sweepY[start_index_avg:finish_index_avg]))
     u_raw.append(abf_sweeps.sweepEpochs.levels[2])
 
-ax_vac[0].plot(u_raw, i_cell, '.-')
-ax_vac[1].plot(u_raw, i_single, '.-')
+V = -60  # voltage in light on experiment
+V_rev = u_raw[min(range(len(i_cell)), key=lambda k: abs(i_cell[k]-0))]
+print("rev. potential:", V_rev, "mV")
+
+# Fitting VAC with line
+params_vac, cov_vac = curve_fit(linear, u_for_fit, i_cell_for_fit)
+a_vac = params_vac[0]
+
+x_vac = np.linspace(FIT_V_START, FIT_V_FINISH, 1000)
+ax_vac.plot(x_vac, linear(x_vac, a_vac))
+ax_vac.plot(u_raw, i_cell, '.-')
 
 plt.show()
+
+print("f_c_fit:", f_c_fit, "Hz")
+
+gamma = i_single[2] / (V - V_rev)
+print("conductance:", gamma * (10 ** 6), "fS")
